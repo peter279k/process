@@ -270,65 +270,6 @@ class ProcessTest extends TestCase {
         });
     }
 
-    /**
-     * @expectedException \Amp\Process\StatusError
-     * @expectedExceptionMessage Process has not been started.
-     */
-    public function testProcessHasNotBeenStartedWithGetPid() {
-        Loop::run(function () {
-            $process = new Process(self::CMD_PROCESS);
-            $promise = $process->getPid();
-
-            yield $promise;
-        });
-    }
-
-    /**
-     * @expectedException \Amp\Process\StatusError
-     * @expectedExceptionMessage Process is not running.
-     */
-    public function testProcessIsNotRunningWithKill() {
-        Loop::run(function () {
-            $process = new Process(self::CMD_PROCESS);
-
-            $process->kill();
-
-            yield $promise;
-        });
-    }
-
-    /**
-     * @expectedException \Amp\Process\StatusError
-     * @expectedExceptionMessage Process is not running.
-     */
-    public function testProcessIsNotRunningWithSignal() {
-        Loop::run(function () {
-            $process = new Process(self::CMD_PROCESS);
-
-            $process->signal(0);
-
-            yield $promise;
-        });
-    }
-
-    /**
-     * @expectedException \Amp\Process\StatusError
-     * @expectedExceptionMessage Process has not been started.
-     */
-    public function testProcessHasBeenStarted() {
-        Loop::run(function () {
-            $process = new Process(self::CMD_PROCESS);
-            $promise = $process->join();
-
-            yield $promise;
-        });
-    }
-
-    public function testCommand() {
-        $process = new Process([self::CMD_PROCESS]);
-        $this->assertSame(\implode(" ", \array_map("escapeshellarg", [self::CMD_PROCESS])), $process->getCommand());
-    }
-
     public function testOptions() {
         $process = new Process(self::CMD_PROCESS);
         $this->assertSame([], $process->getOptions());
