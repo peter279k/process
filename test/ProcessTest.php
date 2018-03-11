@@ -274,19 +274,6 @@ class ProcessTest extends TestCase {
      * @expectedException \Amp\Process\StatusError
      * @expectedExceptionMessage Process has not been started.
      */
-    public function testProcessHasNotBeenStartedWithJoin() {
-        Loop::run(function () {
-            $process = new Process(self::CMD_PROCESS);
-            $promise = $process->join();
-
-            yield $promise;
-        });
-    }
-
-    /**
-     * @expectedException \Amp\Process\StatusError
-     * @expectedExceptionMessage Process has not been started.
-     */
     public function testProcessHasNotBeenStartedWithGetPid() {
         Loop::run(function () {
             $process = new Process(self::CMD_PROCESS);
