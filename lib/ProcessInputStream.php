@@ -9,6 +9,7 @@ use Amp\ByteStream\StreamException;
 use Amp\Deferred;
 use Amp\Failure;
 use Amp\Promise;
+use Amp\Success;
 
 class ProcessInputStream implements InputStream {
     /** @var Deferred */
@@ -49,7 +50,7 @@ class ProcessInputStream implements InputStream {
             if ($this->initialRead) {
                 $initialRead = $this->initialRead;
                 $this->initialRead = null;
-                $initialRead->resolve($this->shouldClose ? null : "");
+                $initialRead->resolve($this->shouldClose ? null : $this->resourceStream->read());
             }
         });
     }
@@ -72,6 +73,10 @@ class ProcessInputStream implements InputStream {
 
         if ($this->resourceStream) {
             return $this->resourceStream->read();
+        }
+
+        if ($this->shouldClose) {
+            return new Success; // Resolve reads on closed streams with null.
         }
 
         $this->initialRead = new Deferred;
@@ -97,6 +102,12 @@ class ProcessInputStream implements InputStream {
 
     public function close() {
         $this->shouldClose = true;
+
+        if ($this->initialRead) {
+            $initialRead = $this->initialRead;
+            $this->initialRead = null;
+            $initialRead->resolve();
+        }
 
         if ($this->resourceStream) {
             $this->resourceStream->close();

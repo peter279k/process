@@ -131,18 +131,28 @@ final class Runner implements ProcessRunner {
             throw new ProcessException("Terminating process failed");
         }
 
+        $failStart = false;
+
         if ($handle->childPidWatcher !== null) {
             Loop::cancel($handle->childPidWatcher);
             $handle->childPidWatcher = null;
+            $handle->pidDeferred->fail(new ProcessException("The process was killed"));
+            $failStart = true;
         }
 
         if ($handle->exitCodeWatcher !== null) {
             Loop::cancel($handle->exitCodeWatcher);
             $handle->exitCodeWatcher = null;
+            $handle->joinDeferred->fail(new ProcessException("The process was killed"));
         }
 
         $handle->status = ProcessStatus::ENDED;
-        $handle->joinDeferred->fail(new ProcessException("The process was killed"));
+
+        if ($failStart || $handle->stdioDeferreds) {
+            $this->socketConnector->failHandleStart($handle, "The process was killed");
+        }
+
+        $this->free($handle);
     }
 
     /** @inheritdoc */
@@ -156,11 +166,16 @@ final class Runner implements ProcessRunner {
         if ($handle->status < ProcessStatus::ENDED && \is_resource($handle->proc)) {
             try {
                 $this->kill($handle);
+                return;
             } catch (ProcessException $e) {
                 // ignore
             }
         }
 
+        $this->free($handle);
+    }
+
+    private function free(Handle $handle) {
         if ($handle->childPidWatcher !== null) {
             Loop::cancel($handle->childPidWatcher);
             $handle->childPidWatcher = null;
@@ -175,10 +190,8 @@ final class Runner implements ProcessRunner {
         $handle->stdout->close();
         $handle->stderr->close();
 
-        for ($i = 0; $i < 4; $i++) {
-            if (\is_resource($handle->sockets[$i] ?? null)) {
-                \fclose($handle->sockets[$i]);
-            }
+        foreach ($handle->sockets as $socket) {
+            @\fclose($socket);
         }
 
         @\stream_get_contents($handle->wrapperStderrPipe);

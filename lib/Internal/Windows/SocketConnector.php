@@ -57,7 +57,7 @@ final class SocketConnector {
         unset($this->pendingClients[(int) $socket]);
     }
 
-    private function failHandleStart(Handle $handle, string $message, ...$args) {
+    public function failHandleStart(Handle $handle, string $message, ...$args) {
         Loop::cancel($handle->connectTimeoutWatcher);
 
         unset($this->pendingProcesses[$handle->wrapperPid]);
@@ -68,7 +68,11 @@ final class SocketConnector {
 
         $error = new ProcessException(\vsprintf($message, $args));
 
-        foreach ($handle->stdioDeferreds as $deferred) {
+        $deferreds = $handle->stdioDeferreds;
+        $deferreds[] = $handle->joinDeferred;
+        $handle->stdioDeferreds = [];
+
+        foreach ($deferreds as $deferred) {
             $deferred->fail($error);
         }
     }
@@ -203,9 +207,13 @@ final class SocketConnector {
 
         if (\count($handle->sockets) === 3) {
             $handle->childPidWatcher = Loop::onReadable($handle->sockets[0], [$this, 'onReadableChildPid'], $handle);
-            $handle->stdioDeferreds[0]->resolve(new ResourceOutputStream($handle->sockets[0]));
-            $handle->stdioDeferreds[1]->resolve(new ResourceInputStream($handle->sockets[1]));
-            $handle->stdioDeferreds[2]->resolve(new ResourceInputStream($handle->sockets[2]));
+
+            $deferreds = $handle->stdioDeferreds;
+            $handle->stdioDeferreds = []; // clear, so there's no double resolution if process spawn fails
+
+            $deferreds[0]->resolve(new ResourceOutputStream($handle->sockets[0]));
+            $deferreds[1]->resolve(new ResourceInputStream($handle->sockets[1]));
+            $deferreds[2]->resolve(new ResourceInputStream($handle->sockets[2]));
         }
     }
 
@@ -218,6 +226,8 @@ final class SocketConnector {
 
         Loop::cancel($handle->childPidWatcher);
         Loop::cancel($handle->connectTimeoutWatcher);
+
+        $handle->childPidWatcher = null;
 
         if (\strlen($data) !== 5) {
             $this->failHandleStart(
@@ -319,10 +329,10 @@ final class SocketConnector {
     }
 
     public function onProcessConnectTimeout($watcher, Handle $handle) {
-        $status = \proc_get_status($handle->proc);
+        $running = \is_resource($handle->proc) && \proc_get_status($handle->proc)['running'];
 
         $error = null;
-        if (!$status['running']) {
+        if (!$running) {
             $error = \stream_get_contents($handle->wrapperStderrPipe);
         }
         $error = $error ?: 'Process did not connect to server before timeout elapsed';
@@ -343,7 +353,15 @@ final class SocketConnector {
     }
 
     public function registerPendingProcess(Handle $handle) {
-        $handle->connectTimeoutWatcher = Loop::delay(self::CONNECT_TIMEOUT, [$this, 'onProcessConnectTimeout'], $handle);
+        // Use Loop::defer() to start the timeout only after the loop has ticked once. This prevents issues with many
+        // things started at once, see https://github.com/amphp/process/issues/21.
+        $handle->connectTimeoutWatcher = Loop::defer(function () use ($handle) {
+            $handle->connectTimeoutWatcher = Loop::delay(
+                self::CONNECT_TIMEOUT,
+                [$this, 'onProcessConnectTimeout'],
+                $handle
+            );
+        });
 
         $this->pendingProcesses[$handle->wrapperPid] = $handle;
     }

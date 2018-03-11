@@ -47,10 +47,13 @@ final class Runner implements ProcessRunner {
         if (!$pid || !\is_numeric($pid)) {
             $error = new ProcessException("Could not determine PID");
             $handle->pidDeferred->fail($error);
-            $handle->joinDeferred->fail($error);
             foreach ($deferreds as $deferred) {
                 /** @var $deferred Deferred */
                 $deferred->fail($error);
+            }
+            if ($handle->status < ProcessStatus::ENDED) {
+                $handle->status = ProcessStatus::ENDED;
+                $handle->joinDeferred->fail($error);
             }
             return;
         }
@@ -148,8 +151,12 @@ final class Runner implements ProcessRunner {
             throw new ProcessException("Terminating process failed");
         }
 
-        $handle->status = ProcessStatus::ENDED;
-        $handle->joinDeferred->fail(new ProcessException("The process was killed"));
+        if ($handle->status < ProcessStatus::ENDED) {
+            $handle->status = ProcessStatus::ENDED;
+            $handle->joinDeferred->fail(new ProcessException("The process was killed"));
+        }
+
+        $this->free($handle);
     }
 
     /** @inheritdoc */
@@ -166,11 +173,16 @@ final class Runner implements ProcessRunner {
         if ($handle->status < ProcessStatus::ENDED && \getmypid() === $handle->originalParentPid) {
             try {
                 $this->kill($handle);
+                return;
             } catch (ProcessException $e) {
                 // ignore
             }
         }
 
+        $this->free($handle);
+    }
+
+    private function free(Handle $handle) {
         /** @var Handle $handle */
         if ($handle->extraDataPipeWatcher !== null) {
             Loop::cancel($handle->extraDataPipeWatcher);

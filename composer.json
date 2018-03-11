@@ -35,7 +35,12 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Amp\\Test\\Process\\": "test"
+            "Amp\\Process\\Test\\": "test"
+        }
+    },
+    "config": {
+        "platform": {
+            "php": "7.0.0"
         }
     }
 }
